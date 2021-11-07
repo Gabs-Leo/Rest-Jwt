@@ -13,6 +13,7 @@ import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import com.gabs.jwt.domain.AppRole;
@@ -30,15 +31,20 @@ public class AppUserServiceImpl implements AppUserService, UserDetailsService{
 	@Autowired
 	private final AppUserRepos userRepos;
 	
-	public AppUserServiceImpl(AppRoleRepos roleRepos, AppUserRepos userRepos) {
+	@Autowired
+	private final PasswordEncoder passwordEncoder;
+	
+	public AppUserServiceImpl(AppRoleRepos roleRepos, AppUserRepos userRepos, PasswordEncoder passwordEncoder) {
 		super();
 		this.roleRepos = roleRepos;
 		this.userRepos = userRepos;
+		this.passwordEncoder = passwordEncoder;
 	}
 
 	@Override
 	public AppUser saveAppUser(AppUser user) {
 		System.out.println("Salvando o Usuário " + user.getName() + "!");
+		user.setPassword(passwordEncoder.encode(user.getPassword()));
 		return userRepos.save(user);
 	}
 
@@ -80,8 +86,9 @@ public class AppUserServiceImpl implements AppUserService, UserDetailsService{
 			System.out.println("User " + username + " encontrado!");
 		}
 		Collection<SimpleGrantedAuthority> authorities = new ArrayList<>();
-		user.getRoles().forEach(i ->
-			authorities.add(new SimpleGrantedAuthority(i.getName())));
+		user.getRoles().forEach(
+				i -> authorities.add(new SimpleGrantedAuthority(i.getName()))
+			);
 		return new User(user.getUsername(), user.getPassword(), authorities);
 	}
 
