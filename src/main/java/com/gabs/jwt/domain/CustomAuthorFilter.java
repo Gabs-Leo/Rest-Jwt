@@ -1,79 +1,70 @@
 package com.gabs.jwt.domain;
 
 import java.io.IOException;
-import java.util.Date;
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.stream.Collectors;
+
+import static java.util.Arrays.stream;
+import static org.springframework.http.HttpStatus.FORBIDDEN;
 
 import javax.servlet.FilterChain;
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
-import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
-import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.AuthenticationException;
-import org.springframework.security.core.GrantedAuthority;
-import org.springframework.security.core.userdetails.User;
-import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.web.filter.OncePerRequestFilter;
 
 import com.auth0.jwt.JWT;
-import com.auth0.jwt.JWTCreator.Builder;
 import com.auth0.jwt.algorithms.Algorithm;
+import com.auth0.jwt.interfaces.DecodedJWT;
+import com.auth0.jwt.interfaces.JWTVerifier;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
-public class CustomAuthorFilter extends UsernamePasswordAuthenticationFilter{
-
-	@Autowired
-	private final AuthenticationManager authManager;
-	
-	public CustomAuthorFilter() {
-		this.authManager = null;
-	}
-	
-	
-	public CustomAuthorFilter(AuthenticationManager authManager) {
-		this.authManager = authManager;
-	}
+public class CustomAuthorFilter extends OncePerRequestFilter{
 
 	@Override
-	public Authentication attemptAuthentication(HttpServletRequest request, HttpServletResponse response)throws AuthenticationException {
-		String username = request.getParameter("username");
-		String password = request.getParameter("password");
-		System.out.println(username + " " + password);
-		var authToken = new UsernamePasswordAuthenticationToken(username, password);
-		return authManager.authenticate(authToken);
+	protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
+			throws ServletException, IOException {
+		if(request.getServletPath().equals("/api/login") || request.getServletPath().equals("api/token/refresh")) {
+			filterChain.doFilter(request, response);
+		}else {
+			String authorHeader = request.getHeader(HttpHeaders.AUTHORIZATION);
+			if(authorHeader != null && authorHeader.startsWith("Bearer ")) {
+				try {
+					String token = authorHeader.substring("Bearer ".length());
+					Algorithm alg = Algorithm.HMAC256("secret".getBytes());
+					JWTVerifier verifier = JWT.require(alg).build();
+					DecodedJWT decodedJWT = verifier.verify(token);	
+					String username = decodedJWT.getSubject();
+					String[] roles = decodedJWT.getClaim("roles").asArray(String.class);
+					Collection<SimpleGrantedAuthority> authorities = new ArrayList<>();
+					stream(roles).forEach(role -> {
+						authorities.add(new SimpleGrantedAuthority(role));
+					});
+					var authenToken = new UsernamePasswordAuthenticationToken(username, null, authorities);
+					SecurityContextHolder.getContext().setAuthentication(authenToken);
+					filterChain.doFilter(request, response);
+				}catch(Exception e) {
+					response.setHeader("error", e.getMessage());
+					response.setStatus(FORBIDDEN.value());
+					//response.sendError(FORBIDDEN.value());
+					Map<String, String> error = new HashMap<>();
+					error.put("error_message", e.getMessage());
+					response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+					new ObjectMapper().writeValue(response.getOutputStream(), error);
+				}
+			} else {
+				filterChain.doFilter(request, response);
+			}
+		}
+		
 	}
-
-	@Override
-	protected void successfulAuthentication(HttpServletRequest request, HttpServletResponse response, FilterChain chain, Authentication auth) throws IOException, ServletException {
-		User user = (User) auth.getPrincipal();
-		//Isso deve ser codificado depois
-		Algorithm alg = Algorithm.HMAC256("secret".getBytes());
-		String accessToken = JWT.create()
-				.withSubject(user.getUsername())
-				.withExpiresAt(new Date(System.currentTimeMillis() + 10 * 60 * 1000))
-				.withIssuer(request.getRequestURL().toString())
-				.withClaim("roles", user.getAuthorities().stream().map(GrantedAuthority::getAuthority).collect(Collectors.toList()))
-				.sign(alg);
-		String refreshToken = JWT.create()
-				.withSubject(user.getUsername())
-				.withExpiresAt(new Date(System.currentTimeMillis() + 30 * 60 * 1000))
-				.withIssuer(request.getRequestURL().toString())
-				.sign(alg);
-		/*response.setHeader("access_token", accessToken);
-		response.setHeader("refresh_token", refreshToken);*/
-		Map<String, String> tokens = new HashMap<>();
-		tokens.put("access_token", accessToken);
-		tokens.put("refresh_token", refreshToken);
-		response.setContentType(MediaType.APPLICATION_JSON_VALUE);
-		new ObjectMapper().writeValue(response.getOutputStream(), tokens);
-	}
-	
-	
 	
 }

@@ -13,7 +13,7 @@ import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
-import com.gabs.jwt.domain.CustomAuthorFilter;
+import com.gabs.jwt.domain.CustomAuthenFilter;
 
 @Configuration
 @EnableWebSecurity
@@ -30,21 +30,21 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter{
 
 	@Override
 	protected void configure(HttpSecurity http) throws Exception {
-		CustomAuthorFilter authFilter = new CustomAuthorFilter(authenticationManagerBean());
+		CustomAuthenFilter authFilter = new CustomAuthenFilter(authenticationManagerBean());
 		authFilter.setFilterProcessesUrl("/api/login");
 		http
 		.csrf()
 			.disable()
 		.sessionManagement().sessionCreationPolicy(SessionCreationPolicy.STATELESS)
 		.and()
-		.authorizeRequests().antMatchers("/api/login/**").permitAll()
+		.authorizeRequests().antMatchers("/api/login/**", "api/token/refresh/**").permitAll()
 		.and()
-		.authorizeRequests().antMatchers(HttpMethod.GET, "/api/**").hasAnyAuthority("ROLE_SUPER_ADMIN")
+		.authorizeRequests().antMatchers(HttpMethod.GET, "/api/user/**").hasAnyAuthority("ROLE_SUPER_ADMIN")
 		.and()
-		.authorizeRequests().antMatchers(HttpMethod.POST, "/api/user/**").hasAnyAuthority("ROLE_ADMIN")
+		.authorizeRequests().antMatchers(HttpMethod.POST, "/api/user/process/**").hasAnyAuthority("ROLE_ADMIN")
 		.and()
 		.addFilter(authFilter)
-		.addFilterBefore(new CustomAuthorFilter(), UsernamePasswordAuthenticationFilter.class);
+		.addFilterBefore(new CustomAuthenFilter(), UsernamePasswordAuthenticationFilter.class);
 		
 	}
 
